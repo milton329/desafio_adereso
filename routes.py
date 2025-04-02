@@ -41,6 +41,13 @@ def resolver_comparar_test():
             }    
     return {"error": "No se pudo obtener el problema"}
 
+
+'''
+@author: Milton Jaramillo
+@since: 04-02-2025
+@summary: Mejoras realizadas teniendo en cuenta reunión con Carlos el dia de hoy.
+'''
+
 # Variables globales para mantener el estado del problema actual
 problem_id_global = None
 problem_text_global = None
@@ -75,7 +82,7 @@ def resolver_prueba_ciclo():
         problem_text_global = data_problema.get("problem")
         all_results = []
         count = 0
-        while True:  # Bucle infinito hasta que no haya más problemas
+        while True:  # Bucle infinito hasta que no haya más problemas o hayamos finalizado el limite de tiempo
             count += 1
             result = resolver_prueba(problem_id_global, problem_text_global)
             all_results.append(result)
@@ -103,7 +110,6 @@ def resolver_prueba_ciclo():
         })    
     return jsonify({"error": "No se pudo inicializar la sesión de la prueba :("})
    
-
 '''
 @author: Milton Jaramillo
 @since: 12-03-2025
