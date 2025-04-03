@@ -18,7 +18,8 @@ app = Flask(__name__)
 @app.route("/resolver_comparar_test", methods=["GET"])
 def resolver_comparar_test():
     controller_apiexternal = ApisExternalController()
-    controller_resolvers = ResolversController()
+    controller_apiinternal = ApisInternalController()
+    controller_resolvers = ResolversController(controller_apiinternal)
     """Ejecuta una prueba en test y devuelve el resultado para saber como estamos para poder comparar :) """
     response = controller_apiexternal.challenge_obetener_prueba("test")    
     if response.status_code == 200:
@@ -27,14 +28,16 @@ def resolver_comparar_test():
         problem_text = data.get("problem")
         solution = data.get("solution")                 
         if problem_id and problem_text:
-            ai_response = controller_apiexternal.call_openai_proxy(problem_text)            
+            ai_response = controller_apiexternal.call_openai_proxy(problem_text)           
             formula = ai_response.get("choices", [{}])[0].get("message", {}).get("content", "")
-            result = controller_resolvers.resolve_formula(formula)
+            formula = formula.replace("resultado = ", "").strip()
+            print(formula)
+            result = controller_resolvers.evaluate_expression(formula)
+            print(result)
             valor_enviar = result if isinstance(result, (int, float)) else 0                       
             body = {"problem_id": problem_id,"answer": valor_enviar}
             return {
                 "problem": problem_text,
-                "formula": controller_resolvers.clean_formula(formula),
                 "result_test": solution,
                 "result_propio": result,
                 "body": body,
@@ -55,17 +58,20 @@ problem_text_global = None
 def resolver_prueba(problem_id, problem_text):
     global problem_id_global, problem_text_global
     controller_apiexternal = ApisExternalController()
-    controller_resolvers = ResolversController()    
+    controller_apiinternal = ApisInternalController()
+    controller_resolvers = ResolversController(controller_apiinternal)   
     if problem_id and problem_text:
-        ai_response = controller_apiexternal.call_openai_proxy(problem_text)            
+        ai_response = controller_apiexternal.call_openai_proxy(problem_text)           
         formula = ai_response.get("choices", [{}])[0].get("message", {}).get("content", "")
-        result = controller_resolvers.resolve_formula(formula)
+        formula = formula.replace("resultado = ", "").strip()
+        print("formula --- > ", formula)
+        result = controller_resolvers.evaluate_expression(formula)
         valor_enviar = result if isinstance(result, (int, float)) else 0
         body = {"problem_id": problem_id, "answer": valor_enviar}
         solution_response = controller_apiexternal.challenge_resolver_prueba("solution", body)        
         if solution_response.status_code == 200:
             result_problema = solution_response.json()
-            print("ID Next --- > ", problem_id)
+            print("ID Next --- > ", problem_id, "---", valor_enviar)
             return solution_response.json()
     return {"error": "No se pudo resolver el problema"}
 

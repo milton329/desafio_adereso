@@ -13,8 +13,8 @@ from routes import app
 from controller.ApisInternal import ApisInternalController
 
 
-initialize_database(app)
-create_tables()
+# initialize_database(app)
+# create_tables()
 controller = ApisInternalController()
 controller.create_indices()
 

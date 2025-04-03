@@ -27,18 +27,22 @@ class ApisExternalController():
             "model": "gpt-4o-mini",
             "messages": [
                 {"role": "developer", "content": """
-                IMPORTANTE: Debes generar SOLAMENTE una operación matemática con el siguiente formato exacto:                
-                "Propiedad de Entidad" operador "Propiedad de Entidad"                
-                Por ejemplo: "Población de Tatooine" - "Altura de Luke Skywalker"                
-                No incluyas ningún texto adicional, explicaciones ni frases como "La operación matemática es:" 
-                Utiliza exclusivamente los nombres y propiedades de las entidades mencionadas en el problema.
-                Usa únicamente caracteres ascii estándar (no uses comillas especiales).                
-                Propiedades disponibles:
-                - Para planetas (StarWarsPlanet): población (population), período de rotación (rotation_period), 
-                período orbital (orbital_period), diámetro (diameter), agua superficial (surface_water)
-                - Para personajes (StarWarsCharacter): altura (height), masa (mass)
-                - Para Pokémon: experiencia base (base_experience), altura (height), peso (weight)
-                """},
+                Dado el siguiente problema matemático en lenguaje natural, identifica las entidades y propiedades involucradas. Debes generar solamente una operación matemática, respetando el siguiente formato:
+                resultado=Tipo["Entidad"]["Propiedad"] operacioˊn Tipo["Entidad"]["Propiedad"]\text{resultado} = \text{Tipo}["Entidad"]["Propiedad"] \, \text{operación} \, \text{Tipo}["Entidad"]["Propiedad"]resultado=Tipo["Entidad"]["Propiedad"]operacioˊnTipo["Entidad"]["Propiedad"] 
+                ________________________________________
+                Instrucciones detalladas:
+                1.	Extrae las entidades mencionadas en el problema. Puede ser uno o más de los siguientes tipos:
+                o	Pokemon
+                o	StarWarsCharacter
+                o	StarWarsPlanet
+                2.	Identifica las propiedades mencionadas dentro del problema. Cada entidad tiene un conjunto de propiedades disponibles:
+                o	StarWarsPlanet: "rotation_period", "orbital_period", "diameter", "surface_water", "population"
+                o	StarWarsCharacter: "height", "mass"
+                o	Pokemon: "base_experience", "height", "weight"
+                3.	Detecta la operación matemática que se debe realizar entre estas propiedades (suma +, resta -, multiplicación *, división /).
+                4.	Genera la ecuación en el siguiente formato:
+                o	resultado = Tipo["Entidad"]["Propiedad"] OPERACIÓN Tipo["Entidad"]["Propiedad"]
+                Problema: """},
                 {"role": "user", "content": user_message}
             ]
         }        

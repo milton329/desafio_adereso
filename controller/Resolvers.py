@@ -1,83 +1,122 @@
 import re
-from .ApisInternal import ApisInternalController
+import operator
+import unicodedata
+
+def normalize_entity_name(name):
+    """Convierte nombres como 'Pokémon' a 'Pokemon' eliminando tildes."""
+    return unicodedata.normalize("NFKD", name).encode("ASCII", "ignore").decode("ASCII")
+
 
 class ResolversController():
-    _star_wars_characters = None 
+    def __init__(self, api_controller):
+        self.api = api_controller
+        self.operators = {
+            "+": (1, operator.add),  # (precedence, function)
+            "-": (1, operator.sub),
+            "*": (2, operator.mul),
+            "/": (2, operator.truediv)
+        }
 
-    def __init__(self):
-        self.controller = ApisInternalController()
-        if ResolversController._star_wars_characters is None:
-            _, _, ResolversController._star_wars_characters = self.controller.get_star_wars_data()
+    def get_value(self, entity_type, entity_name, property_name):
+        """Obtiene el valor de una entidad según su tipo, nombre y propiedad."""
+        entity_type = normalize_entity_name(entity_type)  # Normalizar nombres como "Pokémon" → "Pokemon"
 
-    def clean_formula(self, formula):
-        """Limpia y estandariza la fórmula para asegurar el formato correcto."""
-        cleaned = re.sub(r'^.*?["]', '"', formula, flags=re.DOTALL).strip()    
-        cleaned = cleaned.replace("“", '"').replace("”", '"').replace("'", '"')       
-        if not cleaned.startswith('"'):
-            match = re.search(r'"([^"]+)"\s*([-+*/])\s*"([^"]+)"', formula)
-            if match:
-                return f'"{match.group(1)}" {match.group(2)} "{match.group(3)}"'
-        return cleaned
+        entity_getters = {
+            "StarWarsCharacter": self.api.get_star_wars_character,
+            "StarWarsPlanet": self.api.get_star_wars_planet,
+            "Pokemon": self.api.get_pokemon
+        }
 
-    def extract_entities_and_properties(self, formula):
-        """Extrae los nombres de entidades y sus propiedades"""
-        pattern = r'"([^"]+) de ([^"]+)"'
-        matches = re.findall(pattern, formula)        
-        entities_and_props = {}
-        for match in matches:
-            prop, entity = match
-            prop_normalized = prop.lower()            
-            if prop_normalized in ["altura", "height"]:
-                prop_key = "height"
-            elif prop_normalized in ["masa", "mass", "peso", "weight"]:
-                prop_key = "mass" if entity in ResolversController._star_wars_characters else "weight"
-            elif prop_normalized in ["población", "population"]:
-                prop_key = "population"
-            elif prop_normalized in ["experiencia base", "base experience", "base_experience"]:
-                prop_key = "base_experience"
-            elif prop_normalized in ["período de rotación", "rotation_period", "rotación"]:
-                prop_key = "rotation_period"
-            elif prop_normalized in ["diámetro", "diameter"]:
-                prop_key = "diameter"
-            elif prop_normalized in ["período orbital", "orbital_period"]:
-                prop_key = "orbital_period"
-            elif prop_normalized in ["superficie de agua", "surface_water"]:
-                prop_key = "surface_water"
-            else:
-                prop_key = prop_normalized
-                
-            entities_and_props[f"{prop} de {entity}"] = {"entity": entity, "property": prop_key}        
-        return entities_and_props
+        if entity_type not in entity_getters:
+            raise ValueError(f"Tipo de entidad desconocido: {entity_type}")
 
-    def resolve_formula(self, formula):
-        """Resuelve una fórmula matemática con nombres de entidades"""
-        cleaned_formula = self.clean_formula(formula)
-        entities_and_props = self.extract_entities_and_properties(cleaned_formula)        
-        values = {}
-        errors = []        
-        for entity_str, info in entities_and_props.items():
-            entity_name = info["entity"]
-            property_name = info["property"]            
-            pokemon_data = self.controller.get_pokemon(entity_name)
-            if "error" not in pokemon_data and property_name in pokemon_data:
-                values[entity_str] = pokemon_data[property_name]
-                continue            
-            character_data = self.controller.get_star_wars_character(entity_name)
-            if "error" not in character_data and property_name in character_data:
-                values[entity_str] = character_data[property_name]
-                continue            
-            planet_data = self.controller.get_star_wars_planet(entity_name)
-            if "error" not in planet_data and property_name in planet_data:
-                values[entity_str] = planet_data[property_name]
-                continue            
-            errors.append(f"No se pudo encontrar la entidad o propiedad: {entity_str}")        
-        if errors:
-            return {"error": errors[0], "all_errors": errors}        
-        formula_with_values = cleaned_formula
-        for entity_str, value in values.items():
-            formula_with_values = formula_with_values.replace(f'"{entity_str}"', str(value))        
+        entity_data = entity_getters[entity_type](entity_name)
+
+        if "error" in entity_data or property_name not in entity_data:
+            raise ValueError(f"No se pudo obtener {property_name} de {entity_name}")
+
+        return entity_data[property_name]
+
+    def evaluate_expression(self, expression):
+        tokens = self._tokenize(expression)
         try:
-            result = eval(formula_with_values)
-            return round(result, 10)
-        except Exception as e:
-            return {"error": f"Error al evaluar la fórmula: {str(e)}", "formula": formula_with_values, "values": values}
+            output_queue, _ = self._shunting_yard(tokens)
+            return self._evaluate_rpn(output_queue)
+        except ValueError as e:
+            print(f"Error al evaluar la expresión: {e}")
+            return None
+
+    def _tokenize(self, expression):
+        """Divide la expresión en tokens."""
+        tokens = []
+        pattern = r'([\w-]+)\["([^"\]]+)"\]\["([^"\]]+)"\]|[\+\-\*/()]|\s+'
+        for match in re.finditer(pattern, expression):
+            token = match.group(0).strip()
+            if token:
+                tokens.append(token)
+        return tokens
+
+    def _shunting_yard(self, tokens):
+        """Algoritmo Shunting-Yard para convertir infix a postfix (RPN)."""
+        output_queue = []
+        operator_stack = []
+        entity_pattern = r'([\w-]+)\["([^"\]]+)"\]\["([^"\]]+)"\]'
+
+        for token in tokens:
+            if re.match(entity_pattern, token):
+                output_queue.append(token)
+            elif token in self.operators:
+                while operator_stack and operator_stack[-1] != '(' and self.operators[operator_stack[-1]][0] >= self.operators[token][0]:
+                    output_queue.append(operator_stack.pop())
+                operator_stack.append(token)
+            elif token == '(':
+                operator_stack.append(token)
+            elif token == ')':
+                while operator_stack and operator_stack[-1] != '(':
+                    output_queue.append(operator_stack.pop())
+                if operator_stack and operator_stack[-1] == '(':
+                    operator_stack.pop()
+                else:
+                    raise print("Paréntesis desbalanceados")
+            else:
+                raise print(f"Token desconocido: {token}")
+
+        while operator_stack:
+            if operator_stack[-1] == '(':
+                raise print("Paréntesis desbalanceados")
+            output_queue.append(operator_stack.pop())
+
+        return output_queue, operator_stack
+
+    def _evaluate_rpn(self, rpn_queue):
+        """Evalúa la expresión en Notación Polaca Inversa (RPN)."""
+        stack = []
+        entity_pattern = r'([\w-]+)\["([^"\]]+)"\]\["([^"\]]+)"\]'
+
+        for token in rpn_queue:
+            entity_match = re.match(entity_pattern, token)
+            if entity_match:
+                entity_type, entity_name, property_name = entity_match.groups()
+                try:
+                    value = self.get_value(entity_type, entity_name, property_name)
+                    stack.append(value)
+                except ValueError as e:
+                    print(f"Error al obtener {property_name} de {entity_name}: {e}")
+                    return None
+            elif token in self.operators:
+                if len(stack) < 2:
+                    raise print("No suficientes operandos para el operador")
+                operand2 = stack.pop()
+                operand1 = stack.pop()
+                _, operation = self.operators[token]
+                if operation == operator.truediv and operand2 == 0:
+                    print("Error: División por cero detectada.")
+                    return None  # O lanza una excepción personalizada
+                stack.append(operation(operand1, operand2))
+            else:
+                raise print(f"Token desconocido en la cola RPN: {token}")
+
+        if len(stack) == 1:
+            return round(stack[0], 10)
+        else:
+            raise print("Expresión inválida")
