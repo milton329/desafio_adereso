@@ -2,6 +2,7 @@
 from flask import Flask, request, jsonify
 import requests
 import time
+import orjson
 
 from controller.ApisExternal import ApisExternalController
 from controller.ApisInternal import ApisInternalController
@@ -51,6 +52,13 @@ def resolver_comparar_test():
 @summary: Mejoras realizadas teniendo en cuenta reunión con Carlos el dia de hoy.
 '''
 
+def process_response(response):
+    """Procesar respuesta HTTP de manera más eficiente"""
+    if response.status_code == 200:
+        # orjson es significativamente más rápido que json estándar
+        return orjson.loads(response.content)
+    return {"error": "Error en la respuesta", "status_code": response.status_code}
+
 # Variables globales para mantener el estado del problema actual
 problem_id_global = None
 problem_text_global = None
@@ -64,15 +72,15 @@ def resolver_prueba(problem_id, problem_text):
         ai_response = controller_apiexternal.call_openai_proxy(problem_text)           
         formula = ai_response.get("choices", [{}])[0].get("message", {}).get("content", "")
         formula = formula.replace("resultado = ", "").strip()
-        print("formula --- > ", formula)
+        # print("formula --- > ", formula)
         result = controller_resolvers.evaluate_expression(formula)
         valor_enviar = result if isinstance(result, (int, float)) else 0
         body = {"problem_id": problem_id, "answer": valor_enviar}
         solution_response = controller_apiexternal.challenge_resolver_prueba("solution", body)        
         if solution_response.status_code == 200:
-            result_problema = solution_response.json()
-            print("ID Next --- > ", problem_id, "---", valor_enviar)
-            return solution_response.json()
+            #result_problema = solution_response.json()
+            #print("ID Next --- > ", problem_id, "    Respuesta ---", valor_enviar)
+            return process_response(solution_response)
     return {"error": "No se pudo resolver el problema"}
 
 @app.route("/resolver_prueba_ciclo", methods=["GET"])
@@ -82,16 +90,17 @@ def resolver_prueba_ciclo():
     global problem_id_global, problem_text_global
     controller_apiexternal = ApisExternalController()
     response = controller_apiexternal.challenge_obetener_prueba("start")
+    data_problema = process_response(response)
     if response.status_code == 200:
-        data_problema = response.json()
+        #data_problema = response.json()
         problem_id_global = data_problema.get("id")
         problem_text_global = data_problema.get("problem")
-        all_results = []
+        #all_results = []
         count = 0
         while True:  # Bucle infinito hasta que no haya más problemas o hayamos finalizado el limite de tiempo
             count += 1
             result = resolver_prueba(problem_id_global, problem_text_global)
-            all_results.append(result)
+            #all_results.append(result)
             # Si el mensaje es "Time limit exceeded.", detener el ciclo
             if isinstance(result, dict) and result.get("message") == "Time limit exceeded.":
                 print(f"¡Límite de tiempo alcanzado después de {count} pruebas!")
@@ -112,7 +121,7 @@ def resolver_prueba_ciclo():
                 break
         return jsonify({
             "tests_realizados": count,
-            "results": all_results
+            "results": result
         })    
     return jsonify({"error": "No se pudo inicializar la sesión de la prueba :("})
    

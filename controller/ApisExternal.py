@@ -3,28 +3,135 @@ from flask import Flask, request
 import requests
 from config import POKEAPI_URL, SWAPI_PEOPLE_URL, SWAPI_PLANETS_URL, OPENAI_PROXY_URL, HEADERS, CHALLENGE_URL
 
-class ApisExternalController():
+import time
+from typing import Dict, Any
+import orjson
 
-    def challenge_resolver_prueba(self,endpoint,  body):
-        """ obetener preguntas para test y real """
-        response = requests.post(CHALLENGE_URL+endpoint, headers=HEADERS,json=body)      
+# # Crear un objeto de sesión para reutilizar conexiones
+# session = requests.Session()
+# response = session.get(OPENAI_PROXY_URL, headers=HEADERS)
+
+class ApisExternalController():
+    def __init__(self):
+        # Inicializar la sesión HTTP al crear la instancia
+        self.session = requests.Session()
+        # Suponiendo que estas variables están definidas en la clase o se pasan al constructor
+        self.OPENAI_PROXY_URL = OPENAI_PROXY_URL  # Reemplaza con tu URL real
+        self.HEADERS = HEADERS
+
+    def process_response(response):
+        """Procesar respuesta HTTP de manera más eficiente"""
         if response.status_code == 200:
-            return response
+            # orjson es significativamente más rápido que json estándar
+            return orjson.loads(response.content)
+        return {"error": "Error en la respuesta", "status_code": response.status_code}
+
+    def challenge_resolver_prueba(self, endpoint, body):
+        """ obtener preguntas para test y real """
+        # Usar la sesión de la clase para mantener conexiones abiertas
+        # Si no existe, crear una nueva sesión
+        if not hasattr(self, 'session'):
+            self.session = requests.Session()
+        
+        # Cabeceras optimizadas para el rendimiento
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive'
+        }
+        
+        # Añadir las cabeceras de autenticación existentes
+        if hasattr(self, 'HEADERS'):
+            headers.update(self.HEADERS)
         else:
-            return {"error": "No se pudo resolver el problema"}
+            # Si no está definido en la clase, usar la constante HEADERS
+            headers.update(HEADERS)
+        
+        try:
+            # Medir el tiempo de respuesta para diagnóstico
+            import time
+            start_time = time.time()
+            
+            # Hacer la llamada a la API usando la sesión
+            url = CHALLENGE_URL + endpoint
+            response = self.session.post(url, json=body, headers=headers, timeout=10)
+            
+            # Registrar tiempo de respuesta
+            elapsed_time = time.time() - start_time
+            #print(f"Tiempo de respuesta de Challenge: {elapsed_time:.2f} segundos")
+            
+            if response.status_code == 200:
+                return response
+            else:
+                return {
+                    "error": "No se pudo resolver el problema",
+                    "status_code": response.status_code,
+                    "details": response.text
+                }
+        except requests.exceptions.Timeout:
+            return {"error": "Timeout al conectar con el servicio"}
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Error de conexión: {str(e)}"}
     
     def challenge_obetener_prueba(self, endpoint):
-        """ obetener preguntas para test y real """
-        response = requests.get(CHALLENGE_URL+endpoint, headers=HEADERS)      
-        if response.status_code == 200:
-            return response
+        """Obtener preguntas para test y real con sesión optimizada"""
+        
+        # Usar la sesión de la clase para mantener conexiones abiertas
+        if not hasattr(self, 'session'):
+            self.session = requests.Session()
+        
+        # Cabeceras optimizadas
+        headers = {
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive'
+        }
+        
+        # Añadir cabeceras de autenticación si existen
+        if hasattr(self, 'HEADERS'):
+            headers.update(self.HEADERS)
         else:
-            return {"error": "No se pudo obtener el problema"}
+            headers.update(HEADERS)
+        
+        try:
+            start_time = time.time()  # Medir tiempo de respuesta
+            
+            # Hacer la petición GET con la sesión
+            url = CHALLENGE_URL + endpoint
+            response = self.session.get(url, headers=headers, timeout=10)
+            
+            elapsed_time = time.time() - start_time
+            # print(f"Tiempo de respuesta de Challenge: {elapsed_time:.2f} segundos")
+            
+            if response.status_code == 200:
+                return response
+            else:
+                return {
+                    "error": "No se pudo obtener el problema",
+                    "status_code": response.status_code,
+                    "details": response.text
+                }
+        
+        except requests.exceptions.Timeout:
+            return {"error": "Timeout al conectar con el servicio"}
+        
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Error de conexión: {str(e)}"}
 
-    def call_openai_proxy(self, user_message: str):
+    def call_openai_proxy(self, user_message: str)-> Dict[str, Any]:
         """ Consultar a chatgpt :) sin esto nada seria posible  """
+        # Cabeceras optimizadas para el rendimiento
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive'
+        }
+        
+        # Añadir las cabeceras de autenticación si existen
+        if hasattr(self, 'HEADERS') and self.HEADERS:
+            headers.update(self.HEADERS)
+
         payload = {
-            "model": "gpt-4o-mini",
+            "model": "gpt-4-turbo",
             "messages": [
                 {"role": "developer", "content": """
                 Dado el siguiente problema matemático en lenguaje natural, identifica las entidades y propiedades involucradas. Debes generar solamente una operación matemática, respetando el siguiente formato:
@@ -44,13 +151,32 @@ class ApisExternalController():
                 o	resultado = Tipo["Entidad"]["Propiedad"] OPERACIÓN Tipo["Entidad"]["Propiedad"]
                 Problema: """},
                 {"role": "user", "content": user_message}
-            ]
+            ],
+            "temperature": 0.0
         }        
-        response = requests.post(OPENAI_PROXY_URL, json=payload, headers=HEADERS)        
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return {"error": "Error en el servicio de OpenAI", "status_code": response.status_code, "details": response.text}
+        try:
+            # Medir el tiempo de respuesta para diagnóstico
+            start_time = time.time()
+            
+            # Hacer la llamada a la API usando la sesión
+            response = self.session.post(self.OPENAI_PROXY_URL, json=payload, headers=headers, timeout=10)
+            
+            # Registrar tiempo de respuesta
+            elapsed_time = time.time() - start_time
+            #print(f"Tiempo de respuesta de OpenAI: {elapsed_time:.2f} segundos")
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                return {
+                    "error": "Error en el servicio de OpenAI", 
+                    "status_code": response.status_code, 
+                    "details": response.text
+                }
+        except requests.exceptions.Timeout:
+            return {"error": "Timeout al conectar con OpenAI"}
+        except requests.exceptions.RequestException as e:
+            return {"error": f"Error de conexión: {str(e)}"}
     
     def get_pokemon(self, name):
         response = requests.get(f"{POKEAPI_URL}{name.lower()}")
